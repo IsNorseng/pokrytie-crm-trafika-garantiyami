@@ -1,3 +1,5 @@
-month,offer_id,geo,crm_leads,crm_approvals,leads_under_guarantee,approvals_under_guarantee,lead_coverage_pct,approval_coverage_pct
-2025-01-01,offer_demo,GEO_A,100,20,60,12,60.00,60.00
-2025-02-01,offer_demo,GEO_A,100,15,50,10,50.00,66.67
+Срез,Месяц,GEO,Оффер,Аппрувов CRM,Лидов CRM,Лидов под гарантом,Аппрувов под гарантом,Аппрувов под гарантом %,Лидов под гарантом %
+По GEO,2025-08-01,GEO_A,,20,100,60,12,60.00,60.00
+По офферу,2025-08-01,,OFFER_DEMO,40,180,110,30,75.00,61.11
+По GEO,2025-09-01,GEO_A,,24,120,90,18,75.00,75.00
+По офферу,2025-09-01,,OFFER_DEMO,45,210,100,30,66.67,47.62
