@@ -1,46 +1,48 @@
-# CRM Traffic Coverage by Partner Guarantees
+# Покрытие CRM-трафика гарантиями
 
-A sanitized portfolio example of an ad-hoc analysis that measures the share of CRM leads and approvals recorded while partner guarantees were active.
+Обезличенный пример разового анализа доли лидов и аппрувов CRM, пришедшихся на дни действия гарантий партнёров.
 
-> **Portfolio safety:** This is an illustrative reconstruction based on the task description. The original production SQL, source data, client details, internal identifiers, and commercial results are not included. The query uses generic PostgreSQL table and column names; the CSV contains fabricated values for demonstration only.
+> **Для портфолио:** это иллюстративная реконструкция по описанию задачи. Здесь нет исходного SQL, данных из рабочей базы, названий клиентов, внутренних идентификаторов и коммерческих результатов. Имена таблиц и полей в запросе условные; CSV содержит только вымышленные числа.
 
-## Business task
+## Задача
 
-For August and September of the target year, calculate what share of CRM traffic was covered by an active guarantee. Produce separate summary tables by GEO and by offer.
+Для августа и сентября нужного года рассчитать долю трафика, покрытую активными гарантами. Подготовить отдельные сводные таблицы по GEO и по офферам.
 
-The requested output contains:
+В каждой сводке нужны:
 
-- CRM approvals and leads
-- CRM leads recorded on days when a matching guarantee was active
-- CRM approvals recorded on days when a matching guarantee was active
-- Approval coverage, %
-- Lead coverage, %
+- аппрувы CRM и лиды CRM;
+- лиды CRM, поступившие в дни действия гаранта;
+- аппрувы CRM, полученные в дни действия гаранта;
+- процент аппрувов под гарантом;
+- процент лидов под гарантом.
 
-## Data and matching logic
+## Данные и логика
 
-The workflow uses daily CRM statistics, typically at web + offer grain or web + sub + offer grain, and a separate extract of guarantee periods.
+CRM-статистика выгружается посуточно, например в разрезе веба и оффера или веба, саба и оффера. Гаранты выгружаются отдельно из хранилища данных.
 
-| Source | Generic fields used |
+| Источник | Условные поля |
 | --- | --- |
 | `crm_stat` | `traffic_date`, `web_id`, `offer_id`, `geo`, `leads`, `approvals` |
 | `partner_guarantees` | `web_id`, `offer_id`, `guarantee_start`, `guarantee_end` |
 
-Before matching, validate the guarantee extract against the relevant offer reference so incorrectly recorded offers do not silently distort coverage. The example SQL also excludes guarantee rows with missing or reversed date bounds. Daily CRM rows are matched to guarantees by `web_id` + `offer_id` and date; an active guarantee marks that day's leads and approvals as covered. The optional `sub_id` can remain in a detailed extract, but it is not part of the guarantee match described here.
+Перед сопоставлением нужно проверить выгрузку гарантов и убедиться, что офферы указаны корректно. Затем дневные записи CRM сопоставляются с периодами гарантов по вебу и офферу. Если дата трафика попадает в период гарантии, дневные лиды и аппрувы считаются покрытыми.
 
-## Metrics
+Запрос исключает гарантии с незаполненными или перепутанными границами периода. Совпадающие периоды не дублируют трафик. Начальная и конечная даты гарантии включены в период.
 
-- **Lead coverage, %** = leads under guarantee / CRM leads × 100
-- **Approval coverage, %** = approvals under guarantee / CRM approvals × 100
+## Расчёт показателей
 
-Date bounds are inclusive. `EXISTS` prevents overlapping guarantee rows from counting the same daily traffic more than once. If a denominator is zero, coverage is returned as `NULL`.
+- **Покрытие лидов, %** = лиды под гарантом / лиды CRM × 100.
+- **Покрытие аппрувов, %** = аппрувы под гарантом / аппрувы CRM × 100.
 
-## Result layout
+Если в группе нет лидов или аппрувов, соответствующий процент возвращается как `NULL`.
 
-The SQL returns both breakdowns in one result set. `report_breakdown` identifies the table grain: `geo` rows contain a GEO and leave `offer_id` empty; `offer` rows contain an offer and leave GEO empty. Filter `month` to the August and September rows for the target year.
+## Результат
 
-The [synthetic CSV example](examples/result_example.csv) illustrates this layout with fabricated data. Its example year is illustrative and does not identify the year of the original task.
+Запрос возвращает обе сводки в одном наборе строк. Поле «Срез» показывает детализацию: «По GEO» — строки с GEO и пустым оффером; «По офферу» — строки с оффером и пустым GEO. В поле «Месяц» остаются август и сентябрь выбранного года.
 
-## Files
+[Пример результата](examples/result_example.csv) показывает формат на вымышленных числах. 2025 год в примере нужен только для формата даты и не указывает год исходной задачи.
 
-- [`sql/traffic_guarantee_coverage.sql`](sql/traffic_guarantee_coverage.sql) — commented PostgreSQL query. Run it with `$1` set to August 1 and `$2` set to October 1 of the target year, so both August and September are included.
-- [`examples/result_example.csv`](examples/result_example.csv) — fabricated output rows; not commercial results.
+## Файлы
+
+- [`sql/traffic_guarantee_coverage.sql`](sql/traffic_guarantee_coverage.sql) — запрос PostgreSQL с комментариями. Перед запуском задайте `$1` как 1 августа, а `$2` как 1 октября нужного года; конечная дата не включается.
+- [`examples/result_example.csv`](examples/result_example.csv) — пример таблицы с синтетическими данными.
