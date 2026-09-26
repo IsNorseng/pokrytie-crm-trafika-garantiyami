@@ -1,26 +1,34 @@
--- Sanitized portfolio demonstration, not the original production query.
--- Map generic table and column names to the target schema before use.
--- Guarantee date bounds are inclusive. EXISTS prevents duplicate CRM counts
--- when guarantee records overlap. A zero denominator produces NULL coverage.
+-- Обезличенная реконструкция для портфолио, а не исходный рабочий запрос.
+-- Задайте $1 как 1 августа, а $2 как 1 октября нужного года (конечная дата не включается).
+-- До сопоставления проверьте корректность офферов в выгрузке гарантов.
+-- Границы гарантии включены; EXISTS не дублирует трафик при пересекающихся периодах.
 
-WITH crm_daily AS (
-    -- Normalize CRM traffic to one row per day, web, offer, and GEO.
+WITH report_period AS (
+    SELECT $1::date AS start_date, $2::date AS end_date_exclusive
+),
+crm_daily AS (
+    -- Собираем CRM-метрики за день по вебу, офферу и GEO.
+    -- Если в исходной выгрузке есть sub_id, его можно сохранить на детальном уровне;
+    -- описанное в задаче сопоставление гаранта выполняется по вебу и офферу.
     SELECT
-        traffic_date::date AS traffic_date,
-        web_id,
-        offer_id,
-        geo,
-        SUM(leads) AS crm_leads,
-        SUM(approvals) AS crm_approvals
-    FROM crm_stat
+        s.traffic_date::date AS traffic_date,
+        s.web_id,
+        s.offer_id,
+        s.geo,
+        SUM(s.leads) AS crm_leads,
+        SUM(s.approvals) AS crm_approvals
+    FROM crm_stat AS s
+    CROSS JOIN report_period AS p
+    WHERE s.traffic_date::date >= p.start_date
+      AND s.traffic_date::date < p.end_date_exclusive
     GROUP BY
-        traffic_date::date,
-        web_id,
-        offer_id,
-        geo
+        s.traffic_date::date,
+        s.web_id,
+        s.offer_id,
+        s.geo
 ),
 valid_guarantees AS (
-    -- Keep only complete, chronologically valid guarantee periods.
+    -- Исключаем неполные периоды и случаи, когда дата начала позже даты окончания.
     SELECT
         web_id,
         offer_id,
@@ -32,7 +40,7 @@ valid_guarantees AS (
       AND guarantee_start::date <= guarantee_end::date
 ),
 classified AS (
-    -- EXISTS flags a CRM row once even if several guarantee periods overlap.
+    -- День CRM покрыт, если гарантия совпала по вебу, офферу и дате.
     SELECT
         c.*,
         EXISTS (
@@ -44,31 +52,65 @@ classified AS (
         ) AS is_guaranteed
     FROM crm_daily AS c
 ),
-monthly AS (
-    -- Sum total and covered volumes at the reporting grain.
+monthly_by_geo AS (
+    -- Первая сводка: отдельно по GEO, суммарно по офферам.
     SELECT
         date_trunc('month', traffic_date)::date AS month,
-        offer_id,
         geo,
-        SUM(crm_leads) AS crm_leads,
         SUM(crm_approvals) AS crm_approvals,
+        SUM(crm_leads) AS crm_leads,
         SUM(CASE WHEN is_guaranteed THEN crm_leads ELSE 0 END) AS leads_under_guarantee,
         SUM(CASE WHEN is_guaranteed THEN crm_approvals ELSE 0 END) AS approvals_under_guarantee
     FROM classified
-    GROUP BY
-        date_trunc('month', traffic_date)::date,
+    GROUP BY date_trunc('month', traffic_date)::date, geo
+),
+monthly_by_offer AS (
+    -- Вторая сводка: отдельно по офферу, суммарно по GEO.
+    SELECT
+        date_trunc('month', traffic_date)::date AS month,
+        offer_id::text AS offer_id,
+        SUM(crm_approvals) AS crm_approvals,
+        SUM(crm_leads) AS crm_leads,
+        SUM(CASE WHEN is_guaranteed THEN crm_leads ELSE 0 END) AS leads_under_guarantee,
+        SUM(CASE WHEN is_guaranteed THEN crm_approvals ELSE 0 END) AS approvals_under_guarantee
+    FROM classified
+    GROUP BY date_trunc('month', traffic_date)::date, offer_id
+),
+report_rows AS (
+    SELECT
+        'По GEO'::text AS report_breakdown,
+        month,
+        geo::text AS geo,
+        NULL::text AS offer_id,
+        crm_approvals,
+        crm_leads,
+        leads_under_guarantee,
+        approvals_under_guarantee
+    FROM monthly_by_geo
+
+    UNION ALL
+
+    SELECT
+        'По офферу'::text AS report_breakdown,
+        month,
+        NULL::text AS geo,
         offer_id,
-        geo
+        crm_approvals,
+        crm_leads,
+        leads_under_guarantee,
+        approvals_under_guarantee
+    FROM monthly_by_offer
 )
 SELECT
-    month,
-    offer_id,
-    geo,
-    crm_leads,
-    crm_approvals,
-    leads_under_guarantee,
-    approvals_under_guarantee,
-    ROUND(100.0 * leads_under_guarantee / NULLIF(crm_leads, 0), 2) AS lead_coverage_pct,
-    ROUND(100.0 * approvals_under_guarantee / NULLIF(crm_approvals, 0), 2) AS approval_coverage_pct
-FROM monthly
-ORDER BY month, offer_id, geo;
+    report_breakdown AS "Срез",
+    month AS "Месяц",
+    geo AS "GEO",
+    offer_id AS "Оффер",
+    crm_approvals AS "Аппрувов CRM",
+    crm_leads AS "Лидов CRM",
+    leads_under_guarantee AS "Лидов под гарантом",
+    approvals_under_guarantee AS "Аппрувов под гарантом",
+    ROUND(100.0 * approvals_under_guarantee / NULLIF(crm_approvals, 0), 2) AS "Аппрувов под гарантом, %",
+    ROUND(100.0 * leads_under_guarantee / NULLIF(crm_leads, 0), 2) AS "Лидов под гарантом, %"
+FROM report_rows
+ORDER BY month, report_breakdown, geo, offer_id;
