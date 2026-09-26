@@ -1,0 +1,3 @@
+month,offer_id,geo,crm_leads,crm_approvals,leads_under_guarantee,approvals_under_guarantee,lead_coverage_pct,approval_coverage_pct
+2025-01-01,offer_demo,GEO_A,100,20,60,12,60.00,60.00
+2025-02-01,offer_demo,GEO_A,100,15,50,10,50.00,66.67
