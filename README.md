@@ -1,47 +1,46 @@
-# Traffic Guarantee Coverage Analysis
+# CRM Traffic Coverage by Partner Guarantees
 
-A sanitized portfolio example of an ad-hoc analysis that measures how much CRM traffic fell within active partner guarantee periods.
+A sanitized portfolio example of an ad-hoc analysis that measures the share of CRM leads and approvals recorded while partner guarantees were active.
 
-> **Portfolio safety:** This is an illustrative reconstruction based on the task description. It does not contain the original production SQL, source data, internal identifiers, or commercial results. The SQL uses generic PostgreSQL table and column names; the CSV contains fabricated example values.
+> **Portfolio safety:** This is an illustrative reconstruction based on the task description. The original production SQL, source data, client details, internal identifiers, and commercial results are not included. The query uses generic PostgreSQL table and column names; the CSV contains fabricated values for demonstration only.
 
 ## Business task
 
-Measure the monthly share of CRM leads and approvals generated while a partner guarantee was active. Report the result separately by offer and GEO so that coverage can be compared across business segments.
+For August and September of the target year, calculate what share of CRM traffic was covered by an active guarantee. Produce separate summary tables by GEO and by offer.
 
-## Data model
+The requested output contains:
 
-The example query expects two generic source tables:
+- CRM approvals and leads
+- CRM leads recorded on days when a matching guarantee was active
+- CRM approvals recorded on days when a matching guarantee was active
+- Approval coverage, %
+- Lead coverage, %
 
-| Table | Columns used |
+## Data and matching logic
+
+The workflow uses daily CRM statistics, typically at web + offer grain or web + sub + offer grain, and a separate extract of guarantee periods.
+
+| Source | Generic fields used |
 | --- | --- |
 | `crm_stat` | `traffic_date`, `web_id`, `offer_id`, `geo`, `leads`, `approvals` |
 | `partner_guarantees` | `web_id`, `offer_id`, `guarantee_start`, `guarantee_end` |
 
-Map these names to the relevant source fields before running the query. No database connection details or production schema names are included.
-
-## Logic
-
-1. Aggregate CRM metrics by day, web, offer, and GEO.
-2. Exclude guarantee records with missing or reversed date bounds.
-3. Mark daily traffic as guaranteed when a matching web and offer have an active guarantee on that date. Both boundaries are inclusive.
-4. Aggregate by month, offer, and GEO, then calculate the share of leads and approvals covered by a guarantee.
-
-The match uses `EXISTS`, so overlapping guarantee records do not multiply CRM traffic. If the denominator is zero, the corresponding coverage is returned as `NULL`.
+Before matching, validate the guarantee extract against the relevant offer reference so incorrectly recorded offers do not silently distort coverage. The example SQL also excludes guarantee rows with missing or reversed date bounds. Daily CRM rows are matched to guarantees by `web_id` + `offer_id` and date; an active guarantee marks that day's leads and approvals as covered. The optional `sub_id` can remain in a detailed extract, but it is not part of the guarantee match described here.
 
 ## Metrics
 
-- CRM leads and approvals
-- Leads and approvals under guarantee
-- Lead coverage, %
-- Approval coverage, %
+- **Lead coverage, %** = leads under guarantee / CRM leads × 100
+- **Approval coverage, %** = approvals under guarantee / CRM approvals × 100
 
-Coverage is calculated as guaranteed volume divided by total CRM volume for the same month, offer, and GEO.
+Date bounds are inclusive. `EXISTS` prevents overlapping guarantee rows from counting the same daily traffic more than once. If a denominator is zero, coverage is returned as `NULL`.
+
+## Result layout
+
+The SQL returns both breakdowns in one result set. `report_breakdown` identifies the table grain: `geo` rows contain a GEO and leave `offer_id` empty; `offer` rows contain an offer and leave GEO empty. Filter `month` to the August and September rows for the target year.
+
+The [synthetic CSV example](examples/result_example.csv) illustrates this layout with fabricated data. Its example year is illustrative and does not identify the year of the original task.
 
 ## Files
 
-- [`sql/traffic_guarantee_coverage.sql`](sql/traffic_guarantee_coverage.sql) — commented PostgreSQL example query.
-- [`examples/result_example.csv`](examples/result_example.csv) — fabricated output rows to illustrate the result format.
-
-## Result
-
-The query produces one row per month, offer, and GEO. The CSV is synthetic and is not a result from the commercial task.
+- [`sql/traffic_guarantee_coverage.sql`](sql/traffic_guarantee_coverage.sql) — commented PostgreSQL query. Run it with `$1` set to August 1 and `$2` set to October 1 of the target year, so both August and September are included.
+- [`examples/result_example.csv`](examples/result_example.csv) — fabricated output rows; not commercial results.
